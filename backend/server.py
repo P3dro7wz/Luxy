@@ -12,10 +12,10 @@ from pathlib import Path
 import logging
 
 # Local imports
-from .database import engine, get_db
-from .models import Base, User, Content, Like, Rating, Collection, UserRole
-from . import schemas
-from . import auth
+from database import engine, get_db
+from models import Base, User, Content, Like, Rating, Collection, UserRole
+import schemas
+import auth
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
