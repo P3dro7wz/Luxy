@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authAPI } from '../utils/api';
 
 const AuthContext = createContext();
 
@@ -15,33 +16,41 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in (mock check)
-    const savedUser = localStorage.getItem('photoApp_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    // Check if user is logged in
+    const token = localStorage.getItem('photoApp_token');
+    if (token) {
+      // Verify token with backend
+      authAPI.getCurrentUser()
+        .then(response => {
+          setUser(response.data);
+        })
+        .catch(() => {
+          localStorage.removeItem('photoApp_token');
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    } else {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (email, password) => {
     setIsLoading(true);
     try {
-      // Mock login
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const response = await authAPI.login({ email, password });
       
-      const mockUser = {
-        id: '1',
-        email: email,
-        name: email.split('@')[0],
-        collections: [],
-        savedItems: []
-      };
-      
-      localStorage.setItem('photoApp_user', JSON.stringify(mockUser));
-      setUser(mockUser);
-      return { success: true };
+      if (response.data.access_token) {
+        localStorage.setItem('photoApp_token', response.data.access_token);
+        setUser(response.data.user);
+        return { success: true };
+      }
     } catch (error) {
-      return { success: false, error: 'Login failed' };
+      console.error('Login error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || 'Login failed' 
+      };
     } finally {
       setIsLoading(false);
     }
@@ -50,74 +59,95 @@ export const AuthProvider = ({ children }) => {
   const register = async (email, password, name) => {
     setIsLoading(true);
     try {
-      // Mock registration
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const response = await authAPI.register({ email, password, name });
       
-      const mockUser = {
-        id: Date.now().toString(),
-        email: email,
-        name: name,
-        collections: [],
-        savedItems: []
-      };
-      
-      localStorage.setItem('photoApp_user', JSON.stringify(mockUser));
-      setUser(mockUser);
-      return { success: true };
+      if (response.data.access_token) {
+        localStorage.setItem('photoApp_token', response.data.access_token);
+        setUser(response.data.user);
+        return { success: true };
+      }
     } catch (error) {
-      return { success: false, error: 'Registration failed' };
+      console.error('Registration error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || 'Registration failed' 
+      };
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('photoApp_user');
+    localStorage.removeItem('photoApp_token');
     setUser(null);
   };
 
-  const saveItem = (itemId) => {
+  const saveItem = async (itemId) => {
     if (!user) return;
     
-    const updatedUser = {
-      ...user,
-      savedItems: [...user.savedItems, itemId]
-    };
-    
-    localStorage.setItem('photoApp_user', JSON.stringify(updatedUser));
-    setUser(updatedUser);
+    try {
+      // In a real app, this would be an API call
+      // For now, we'll simulate it with localStorage
+      const savedItems = JSON.parse(localStorage.getItem('user_saved_items') || '[]');
+      if (!savedItems.includes(itemId)) {
+        savedItems.push(itemId);
+        localStorage.setItem('user_saved_items', JSON.stringify(savedItems));
+        
+        setUser(prevUser => ({
+          ...prevUser,
+          savedItems: savedItems
+        }));
+      }
+    } catch (error) {
+      console.error('Error saving item:', error);
+    }
   };
 
-  const unsaveItem = (itemId) => {
+  const unsaveItem = async (itemId) => {
     if (!user) return;
     
-    const updatedUser = {
-      ...user,
-      savedItems: user.savedItems.filter(id => id !== itemId)
-    };
-    
-    localStorage.setItem('photoApp_user', JSON.stringify(updatedUser));
-    setUser(updatedUser);
+    try {
+      const savedItems = JSON.parse(localStorage.getItem('user_saved_items') || '[]');
+      const updatedSavedItems = savedItems.filter(id => id !== itemId);
+      localStorage.setItem('user_saved_items', JSON.stringify(updatedSavedItems));
+      
+      setUser(prevUser => ({
+        ...prevUser,
+        savedItems: updatedSavedItems
+      }));
+    } catch (error) {
+      console.error('Error unsaving item:', error);
+    }
   };
 
-  const createCollection = (name) => {
+  const createCollection = async (name) => {
     if (!user) return;
     
-    const newCollection = {
-      id: Date.now().toString(),
-      name: name,
-      items: [],
-      createdAt: new Date().toISOString()
-    };
-    
-    const updatedUser = {
-      ...user,
-      collections: [...user.collections, newCollection]
-    };
-    
-    localStorage.setItem('photoApp_user', JSON.stringify(updatedUser));
-    setUser(updatedUser);
+    try {
+      const response = await collectionsAPI.createCollection({ name });
+      
+      setUser(prevUser => ({
+        ...prevUser,
+        collections: [...(prevUser.collections || []), response.data]
+      }));
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating collection:', error);
+      return { success: false, error: 'Failed to create collection' };
+    }
   };
+
+  // Load saved items when user logs in
+  useEffect(() => {
+    if (user) {
+      const savedItems = JSON.parse(localStorage.getItem('user_saved_items') || '[]');
+      setUser(prevUser => ({
+        ...prevUser,
+        savedItems: savedItems
+      }));
+    }
+  }, [user?.id]);
 
   const value = {
     user,

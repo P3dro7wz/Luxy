@@ -1,7 +1,13 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Image, Video, X, Plus, Save, Eye, Trash2, Edit3 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, Image, Video, X, Plus, Save, Eye, Trash2, Edit3, BarChart3, Users, Camera } from 'lucide-react';
+import AdminLogin from './AdminLogin';
+import { adminAPI } from '../utils/api';
 
-const AdminPanel = ({ content, setContent }) => {
+const AdminPanel = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [content, setContent] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -24,6 +30,45 @@ const AdminPanel = ({ content, setContent }) => {
     { value: 'urban', label: 'Urbano' }
   ];
 
+  useEffect(() => {
+    // Check if admin is already logged in
+    const adminToken = localStorage.getItem('admin_token');
+    if (adminToken) {
+      setIsAuthenticated(true);
+      loadAdminData();
+    }
+    setIsLoading(false);
+  }, []);
+
+  const loadAdminData = async () => {
+    try {
+      const [statsResponse, contentResponse] = await Promise.all([
+        adminAPI.getStats(),
+        adminAPI.getContent()
+      ]);
+      
+      setStats(statsResponse.data);
+      setContent(contentResponse.data);
+    } catch (error) {
+      console.error('Error loading admin data:', error);
+      if (error.response?.status === 403) {
+        handleLogout();
+      }
+    }
+  };
+
+  const handleLogin = (token) => {
+    setIsAuthenticated(true);
+    loadAdminData();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('admin_token');
+    setIsAuthenticated(false);
+    setStats(null);
+    setContent([]);
+  };
+
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
     const validFiles = files.filter(file => 
@@ -44,26 +89,38 @@ const AdminPanel = ({ content, setContent }) => {
     setUploadProgress(0);
 
     try {
+      // Create FormData for file upload
+      const formData = new FormData();
+      selectedFiles.forEach((file, index) => {
+        formData.append('files', file);
+      });
+      formData.append('title', uploadData.title);
+      formData.append('description', uploadData.description);
+      formData.append('category', uploadData.category);
+
       // Simulate upload progress
       for (let i = 0; i <= 100; i += 10) {
         setUploadProgress(i);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Create new content items
+      // In a real implementation, you would upload to the server here
+      // await adminAPI.uploadContent(formData);
+
+      // For now, we'll simulate adding to the content list
       const newItems = selectedFiles.map((file, index) => ({
-        id: Date.now().toString() + index,
-        type: file.type.startsWith('video/') ? 'video' : 'photo',
-        url: URL.createObjectURL(file),
-        thumbnail: URL.createObjectURL(file),
+        id: Date.now() + index,
         title: selectedFiles.length > 1 ? `${uploadData.title} ${index + 1}` : uploadData.title,
-        category: uploadData.category,
         description: uploadData.description,
-        uploadDate: new Date().toISOString(),
-        likes: 0,
-        rating: 0,
-        ratingCount: 0,
-        duration: file.type.startsWith('video/') ? '00:00' : undefined
+        category: uploadData.category,
+        file_type: file.type.startsWith('video/') ? 'video' : 'photo',
+        file_path: URL.createObjectURL(file),
+        thumbnail_path: URL.createObjectURL(file),
+        upload_date: new Date().toISOString(),
+        likes_count: 0,
+        average_rating: 0,
+        ratings_count: 0,
+        is_published: true
       }));
 
       setContent(prevContent => [...newItems, ...prevContent]);
@@ -91,27 +148,43 @@ const AdminPanel = ({ content, setContent }) => {
     });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (editingItem) {
-      setContent(prevContent =>
-        prevContent.map(item =>
-          item.id === editingItem.originalId
-            ? {
-                ...item,
-                title: editingItem.title,
-                description: editingItem.description,
-                category: editingItem.category
-              }
-            : item
-        )
-      );
-      setEditingItem(null);
+      try {
+        // await adminAPI.updateContent(editingItem.originalId, {
+        //   title: editingItem.title,
+        //   description: editingItem.description,
+        //   category: editingItem.category
+        // });
+
+        setContent(prevContent =>
+          prevContent.map(item =>
+            item.id === editingItem.originalId
+              ? {
+                  ...item,
+                  title: editingItem.title,
+                  description: editingItem.description,
+                  category: editingItem.category
+                }
+              : item
+          )
+        );
+        
+        setEditingItem(null);
+      } catch (error) {
+        console.error('Error updating content:', error);
+      }
     }
   };
 
-  const handleDelete = (itemId) => {
+  const handleDelete = async (itemId) => {
     if (window.confirm('Tem certeza que deseja excluir este item?')) {
-      setContent(prevContent => prevContent.filter(item => item.id !== itemId));
+      try {
+        // await adminAPI.deleteContent(itemId);
+        setContent(prevContent => prevContent.filter(item => item.id !== itemId));
+      } catch (error) {
+        console.error('Error deleting content:', error);
+      }
     }
   };
 
@@ -123,18 +196,83 @@ const AdminPanel = ({ content, setContent }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-black"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AdminLogin onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Header */}
-        <div className="mb-12">
-          <h1 className="text-3xl font-light text-gray-900 mb-2">
-            Painel Administrativo
-          </h1>
-          <p className="text-gray-600">
-            Gerencie o conteúdo do seu portfólio de fotografia
-          </p>
+        <div className="mb-12 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-light text-gray-900 mb-2">
+              Painel Administrativo
+            </h1>
+            <p className="text-gray-600">
+              Gerencie o conteúdo do seu portfólio de fotografia
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Sair
+          </button>
         </div>
+
+        {/* Stats Dashboard */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center">
+                <Camera className="h-8 w-8 text-blue-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Total de Conteúdo</p>
+                  <p className="text-2xl font-semibold text-gray-900">{stats.total_content}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center">
+                <Image className="h-8 w-8 text-green-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Fotos</p>
+                  <p className="text-2xl font-semibold text-gray-900">{stats.total_photos}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center">
+                <Video className="h-8 w-8 text-purple-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Vídeos</p>
+                  <p className="text-2xl font-semibold text-gray-900">{stats.total_videos}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center">
+                <BarChart3 className="h-8 w-8 text-yellow-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Curtidas Totais</p>
+                  <p className="text-2xl font-semibold text-gray-900">{stats.total_likes}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Upload Section */}
@@ -216,7 +354,7 @@ const AdminPanel = ({ content, setContent }) => {
                     type="text"
                     value={uploadData.title}
                     onChange={(e) => setUploadData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                     placeholder="Título da foto/vídeo"
                   />
                 </div>
@@ -229,7 +367,7 @@ const AdminPanel = ({ content, setContent }) => {
                     value={uploadData.description}
                     onChange={(e) => setUploadData(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                     placeholder="Descrição opcional..."
                   />
                 </div>
@@ -241,7 +379,7 @@ const AdminPanel = ({ content, setContent }) => {
                   <select
                     value={uploadData.category}
                     onChange={(e) => setUploadData(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                   >
                     {categories.map(cat => (
                       <option key={cat.value} value={cat.value}>
@@ -261,7 +399,7 @@ const AdminPanel = ({ content, setContent }) => {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-black h-2 rounded-full transition-all duration-300"
+                      className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     ></div>
                   </div>
@@ -272,7 +410,7 @@ const AdminPanel = ({ content, setContent }) => {
               <button
                 onClick={handleUpload}
                 disabled={isUploading || selectedFiles.length === 0 || !uploadData.title}
-                className="w-full bg-black text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white py-3 px-4 rounded-lg font-medium hover:from-yellow-600 hover:to-yellow-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 <Upload className="h-4 w-4" />
                 <span>{isUploading ? 'Enviando...' : 'Enviar Arquivos'}</span>
@@ -332,11 +470,11 @@ const AdminPanel = ({ content, setContent }) => {
                   >
                     <div className={`${previewMode === 'list' ? 'w-32 h-24' : 'aspect-[4/3]'} relative`}>
                       <img
-                        src={item.thumbnail}
+                        src={item.thumbnail_path || item.file_path}
                         alt={item.title}
                         className="w-full h-full object-cover"
                       />
-                      {item.type === 'video' && (
+                      {item.file_type === 'video' && (
                         <div className="absolute top-2 left-2">
                           <Video className="h-4 w-4 text-white bg-black/50 rounded p-0.5" />
                         </div>
@@ -367,8 +505,8 @@ const AdminPanel = ({ content, setContent }) => {
                       <div className="text-xs text-gray-500 space-y-1">
                         <p className="capitalize">{item.category}</p>
                         <div className="flex justify-between">
-                          <span>{item.likes} curtidas</span>
-                          <span>{item.rating.toFixed(1)}★ ({item.ratingCount})</span>
+                          <span>{item.likes_count} curtidas</span>
+                          <span>{item.average_rating.toFixed(1)}★ ({item.ratings_count})</span>
                         </div>
                       </div>
                     </div>
@@ -408,7 +546,7 @@ const AdminPanel = ({ content, setContent }) => {
                     type="text"
                     value={editingItem.title}
                     onChange={(e) => setEditingItem(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                   />
                 </div>
                 
@@ -420,7 +558,7 @@ const AdminPanel = ({ content, setContent }) => {
                     value={editingItem.description}
                     onChange={(e) => setEditingItem(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                   />
                 </div>
                 
@@ -431,7 +569,7 @@ const AdminPanel = ({ content, setContent }) => {
                   <select
                     value={editingItem.category}
                     onChange={(e) => setEditingItem(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                   >
                     {categories.map(cat => (
                       <option key={cat.value} value={cat.value}>
@@ -451,7 +589,7 @@ const AdminPanel = ({ content, setContent }) => {
                 </button>
                 <button
                   onClick={saveEdit}
-                  className="flex-1 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center space-x-1"
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition-all flex items-center justify-center space-x-1"
                 >
                   <Save className="h-4 w-4" />
                   <span>Salvar</span>
