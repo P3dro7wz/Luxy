@@ -5,9 +5,9 @@ from passlib.hash import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from .database import get_db
-from .models import User, UserRole
-from . import schemas
+from database import get_db
+from models import User, UserRole
+import schemas
 import os
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
